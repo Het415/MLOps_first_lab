@@ -1,0 +1,58 @@
+name: Train and Compare Models
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      min_accuracy:
+        description: "Minimum test accuracy required"
+        default: "0.9"
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [logreg, rf]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Train ${{ matrix.model }}
+        run: python -m src.train --model ${{ matrix.model }} --min-accuracy ${{ inputs.min_accuracy || '0.9' }} --out artifacts/${{ matrix.model }}
+
+      - name: Upload model and metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-${{ matrix.model }}
+          path: artifacts/${{ matrix.model }}/
+
+  compare:
+    needs: train
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download all models
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: model-*
+
+      - name: Write comparison to job summary
+        run: python -m src.report artifacts >> "$GITHUB_STEP_SUMMARY"
